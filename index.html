@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wire Fault Detector Interface</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
+      font-family: "Poppins", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+
+    h1 {
+      font-size: 2rem;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    p.subtitle {
+      color: #a8c0ff;
+      margin-bottom: 20px;
+    }
+
+    .wire-diagram {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 25px;
+      margin: 30px 0;
+      position: relative;
+    }
+
+    .point {
+      width: 25px;
+      height: 25px;
+      border-radius: 50%;
+      background: #777;
+      box-shadow: 0 0 10px #444;
+      transition: 0.3s;
+    }
+
+    .wire {
+      width: 120px;
+      height: 6px;
+      background: #555;
+      border-radius: 3px;
+      transition: 0.3s;
+    }
+
+    .active {
+      background: linear-gradient(90deg, #00ff9d, #00aaff);
+      box-shadow: 0 0 15px #00ff9d, 0 0 25px #00aaff;
+    }
+
+    .button-container {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    button {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(135deg, #11998e, #38ef7d);
+      transition: all 0.3s ease;
+      box-shadow: 0 0 10px #11998e;
+    }
+
+    button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px #38ef7d;
+    }
+
+    button:disabled {
+      background: #555;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
+
+    .data-box {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 20px;
+      width: 350px;
+      text-align: center;
+      font-size: 1.2rem;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+    }
+  </style>
+</head>
+<body>
+  <h1>Wire Fault Detector</h1>
+  <p class="subtitle">Visual + Real-Time Monitoring</p>
+
+  <div class="wire-diagram">
+    <div class="point" id="A"></div>
+    <div class="wire" id="AB"></div>
+    <div class="point" id="B"></div>
+    <div class="wire" id="BC"></div>
+    <div class="point" id="C"></div>
+    <div class="wire" id="CD"></div>
+    <div class="point" id="D"></div>
+  </div>
+
+  <div class="button-container">
+    <button id="connectBtn">Connect</button>
+    <button id="startBtn" disabled>Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+
+  <div id="outputBox" class="data-box">Waiting for connection...</div>
+
+  <script>
+    let port, reader, keepReading = false;
+    const outputBox = document.getElementById("outputBox");
+    const connectBtn = document.getElementById("connectBtn");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+
+    const wires = {
+      AB: document.getElementById("AB"),
+      BC: document.getElementById("BC"),
+      CD: document.getElementById("CD"),
+    };
+
+    const clearGlow = () => {
+      for (let key in wires) wires[key].classList.remove("active");
+    };
+
+    const showFault = (msg) => {
+      clearGlow();
+      if (msg.includes("A->B")) wires.AB.classList.add("active");
+      else if (msg.includes("B->C")) wires.BC.classList.add("active");
+      else if (msg.includes("C->D")) wires.CD.classList.add("active");
+    };
+
+    connectBtn.addEventListener("click", async () => {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        outputBox.textContent = "Connected ✅";
+        connectBtn.disabled = true;
+        startBtn.disabled = false;
+      } catch (err) {
+        outputBox.textContent = "Connection failed ❌";
+      }
+    });
+
+    startBtn.addEventListener("click", async () => {
+      if (!port) return;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      keepReading = true;
+
+      const decoder = new TextDecoderStream();
+      const inputDone = port.readable.pipeTo(decoder.writable);
+      reader = decoder.readable.getReader();
+
+      outputBox.textContent = "Monitoring started...";
+
+      while (keepReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          const msg = value.trim();
+          outputBox.textContent = msg;
+          showFault(msg);
+        }
+      }
+    });
+
+    stopBtn.addEventListener("click", async () => {
+      keepReading = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      if (reader) await reader.cancel();
+      clearGlow();
+      outputBox.textContent = "Monitoring stopped.";
+    });
+  </script>
+</body>
+</html>
